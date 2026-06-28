@@ -22,7 +22,7 @@ export async function getUsers() {
 export async function getUserByUsername(username) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, salt')
+    .select('id, username, salt, email')
     .ilike('username', username)
     .maybeSingle();
   if (error) throw error;
@@ -32,7 +32,7 @@ export async function getUserByUsername(username) {
 export async function getProfileById(id) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, salt')
+    .select('id, username, salt, email')
     .eq('id', id)
     .single();
   if (error) throw error;

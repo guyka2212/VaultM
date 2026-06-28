@@ -46,7 +46,7 @@ export function AuthProvider({ children }) {
     if (!profile) throw new Error('Invalid username or password');
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: `${username}@vaultm.app`,
+      email: profile.email,
       password,
     });
     if (signInError) throw new Error('Invalid username or password');
@@ -68,8 +68,11 @@ export function AuthProvider({ children }) {
     const key = await deriveEncryptionKey(password, salt);
     const keyB64 = await exportKey(key);
 
+    const emailId = crypto.randomUUID();
+    const email = `${emailId}@mail.com`;
+
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email: `${username}@vaultm.app`,
+      email,
       password,
     });
     if (signUpError) throw signUpError;
@@ -79,6 +82,7 @@ export function AuthProvider({ children }) {
       id: signUpData.user.id,
       username,
       salt: saltB64,
+      email,
     });
     if (profileError) throw profileError;
 
