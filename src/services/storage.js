@@ -1,12 +1,5 @@
+import { supabase } from './supabaseClient';
 import { encrypt, decrypt } from './crypto.js';
-
-const KEYS = {
-  users: 'vaultm_users',
-  passwords: 'vaultm_passwords',
-  groups: 'vaultm_groups',
-  currentUser: 'vaultm_currentUser',
-  nextId: 'vaultm_nextId',
-};
 
 let encryptionKey = null;
 
@@ -18,77 +11,124 @@ export function clearEncryptionKey() {
   encryptionKey = null;
 }
 
-function getData(key) {
-  try {
-    return JSON.parse(localStorage.getItem(key));
-  } catch {
-    return null;
+// ---- Profiles ----
+
+export async function getUsers() {
+  const { data, error } = await supabase.from('profiles').select('id, username');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getUserByUsername(username) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, salt')
+    .ilike('username', username)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+export async function getProfileById(id) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, salt')
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ---- Groups ----
+
+export async function getGroups() {
+  const { data, error } = await supabase.from('groups').select('*');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getGroupById(groupId) {
+  const { data, error } = await supabase
+    .from('groups')
+    .select('*')
+    .eq('id', groupId)
+    .single();
+  if (error) throw error;
+
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId);
+  if (error) throw error;
+
+  return { ...data, members: (members || []).map(m => m.user_id) };
+}
+
+export async function createGroup(name, ownerId) {
+  const { data, error } = await supabase
+    .from('groups')
+    .insert({ name, owner_id: ownerId })
+    .select()
+    .single();
+  if (error) throw error;
+
+  const { error: mErr } = await supabase
+    .from('group_members')
+    .insert({ group_id: data.id, user_id: ownerId });
+  if (mErr) throw mErr;
+
+  return { ...data, members: [ownerId] };
+}
+
+export async function addGroupMember(groupId, username) {
+  const user = await getUserByUsername(username);
+  if (!user) throw new Error('User not found');
+
+  const { error } = await supabase
+    .from('group_members')
+    .insert({ group_id: groupId, user_id: user.id });
+  if (error) {
+    if (error.code === '23505') throw new Error('User is already a member');
+    throw error;
   }
 }
 
-function setData(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
-}
+// ---- Passwords ----
 
-function getNextId() {
-  const id = getData(KEYS.nextId) || 1;
-  setData(KEYS.nextId, id + 1);
-  return id;
-}
+export async function getPasswords(userId, groupId = null) {
+  let query = supabase.from('passwords').select('*').eq('owner_id', userId);
 
-export function getUsers() {
-  return getData(KEYS.users) || [];
-}
+  if (groupId === null) {
+    query = query.is('group_id', null);
+  } else {
+    query = query.eq('group_id', groupId);
+  }
 
-export function createUser(username, passwordHash, salt) {
-  const users = getUsers();
-  const user = { id: getNextId(), username, passwordHash, salt: Array.from(salt), createdAt: new Date().toISOString() };
-  users.push(user);
-  setData(KEYS.users, users);
-  return { ...user };
-}
-
-export function getUserByUsername(username) {
-  const users = getUsers();
-  return users.find(u => u.username.toLowerCase() === username.toLowerCase()) || null;
-}
-
-export function getCurrentUser() {
-  return getData(KEYS.currentUser);
-}
-
-export function setCurrentUser(user) {
-  setData(KEYS.currentUser, user);
-}
-
-export function clearCurrentUser() {
-  localStorage.removeItem(KEYS.currentUser);
-}
-
-export function getAllPasswords() {
-  return getData(KEYS.passwords) || [];
-}
-
-export function getPasswords(userId, groupId = null) {
-  const all = getAllPasswords();
-  return all.filter(p => p.userId === userId && p.groupId === groupId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
 export async function addPassword(entry) {
   if (!encryptionKey) throw new Error('Not authenticated');
 
-  const all = getAllPasswords();
-  const newEntry = {
-    ...entry,
-    id: getNextId(),
-    createdAt: new Date().toISOString(),
+  const encrypted = {
+    owner_id: entry.userId,
+    group_id: entry.groupId || null,
     domain: await encrypt(entry.domain, encryptionKey),
     username: await encrypt(entry.username, encryptionKey),
     password: await encrypt(entry.password, encryptionKey),
+    note: entry.note ? await encrypt(entry.note, encryptionKey) : '',
   };
-  all.push(newEntry);
-  setData(KEYS.passwords, all);
-  return { ...entry, id: newEntry.id, createdAt: newEntry.createdAt };
+
+  const { data, error } = await supabase
+    .from('passwords')
+    .insert(encrypted)
+    .select()
+    .single();
+  if (error) throw error;
+
+  return { ...entry, id: data.id, createdAt: data.created_at };
 }
 
 export async function decryptEntry(entry) {
@@ -98,44 +138,11 @@ export async function decryptEntry(entry) {
     domain: await decrypt(entry.domain, encryptionKey),
     username: await decrypt(entry.username, encryptionKey),
     password: await decrypt(entry.password, encryptionKey),
+    note: entry.note ? await decrypt(entry.note, encryptionKey) : '',
   };
 }
 
-export function deletePassword(id) {
-  const all = getAllPasswords();
-  setData(KEYS.passwords, all.filter(p => p.id !== id));
-}
-
-export function getAllGroups() {
-  return getData(KEYS.groups) || [];
-}
-
-export function getGroups(userId) {
-  const all = getAllGroups();
-  return all.filter(g => g.ownerId === userId || g.members.includes(userId));
-}
-
-export function createGroup(name, ownerId) {
-  const all = getAllGroups();
-  const group = { id: getNextId(), name, ownerId, members: [ownerId], createdAt: new Date().toISOString() };
-  all.push(group);
-  setData(KEYS.groups, all);
-  return { ...group };
-}
-
-export function getGroupById(groupId) {
-  const all = getAllGroups();
-  return all.find(g => g.id === groupId) || null;
-}
-
-export function addGroupMember(groupId, username) {
-  const user = getUserByUsername(username);
-  if (!user) throw new Error('User not found');
-  const all = getAllGroups();
-  const group = all.find(g => g.id === groupId);
-  if (!group) throw new Error('Group not found');
-  if (group.members.includes(user.id)) throw new Error('User is already a member');
-  group.members.push(user.id);
-  setData(KEYS.groups, all);
-  return { ...group };
+export async function deletePassword(id) {
+  const { error } = await supabase.from('passwords').delete().eq('id', id);
+  if (error) throw error;
 }

@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import * as storage from '../services/storage';
 import { useToast } from '../contexts/ToastContext';
 
 export default function PasswordList({ groupId, refreshKey }) {
+  const { user } = useAuth();
   const [entries, setEntries] = useState([]);
   const [search, setSearch] = useState('');
   const [revealed, setRevealed] = useState(new Set());
   const { addToast } = useToast();
 
   async function loadEntries(gid) {
-    const raw = storage.getPasswords(storage.getCurrentUser().id, gid === 'personal' ? null : gid);
+    const raw = await storage.getPasswords(user.id, gid === 'personal' ? null : gid);
     const decrypted = await Promise.all(raw.map(e => storage.decryptEntry(e)));
     setEntries(decrypted);
   }
@@ -18,7 +20,7 @@ export default function PasswordList({ groupId, refreshKey }) {
     loadEntries(groupId);
     setRevealed(new Set());
     setSearch('');
-  }, [groupId, refreshKey]);
+  }, [groupId, refreshKey, user.id]);
 
   const filtered = entries.filter(e =>
     e.domain.toLowerCase().includes(search.toLowerCase()) ||
@@ -43,7 +45,7 @@ export default function PasswordList({ groupId, refreshKey }) {
   }
 
   async function handleDelete(id) {
-    storage.deletePassword(id);
+    await storage.deletePassword(id);
     await loadEntries(groupId);
     addToast('Password deleted');
   }

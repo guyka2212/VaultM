@@ -11,6 +11,7 @@ export default function Dashboard() {
 
   const [activeView, setActiveView] = useState('personal');
   const [groups, setGroups] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -20,15 +21,26 @@ export default function Dashboard() {
   const [groupError, setGroupError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
-  function loadGroups() {
-    setGroups(storage.getGroups(user.id));
+  async function loadGroups() {
+    const gs = await storage.getGroups();
+    setGroups(gs);
   }
 
   useEffect(() => {
     loadGroups();
-  }, [user.id]);
+  }, []);
 
-  function handleCreateGroup(e) {
+  useEffect(() => {
+    if (activeView !== 'personal') {
+      storage.getGroupById(activeView).then(g => {
+        setGroupMembers(g.members || []);
+      }).catch(() => setGroupMembers([]));
+    } else {
+      setGroupMembers([]);
+    }
+  }, [activeView]);
+
+  async function handleCreateGroup(e) {
     e.preventDefault();
     setGroupError('');
     if (!groupName.trim()) {
@@ -36,8 +48,8 @@ export default function Dashboard() {
       return;
     }
     try {
-      const g = storage.createGroup(groupName.trim(), user.id);
-      loadGroups();
+      const g = await storage.createGroup(groupName.trim(), user.id);
+      await loadGroups();
       setActiveView(g.id);
       setShowCreateGroup(false);
       setGroupName('');
@@ -47,7 +59,7 @@ export default function Dashboard() {
     }
   }
 
-  function handleInvite(e) {
+  async function handleInvite(e) {
     e.preventDefault();
     setInviteError('');
     if (!inviteUsername.trim()) {
@@ -57,8 +69,8 @@ export default function Dashboard() {
     const gid = activeView === 'personal' ? null : activeView;
     if (!gid) return;
     try {
-      storage.addGroupMember(gid, inviteUsername.trim());
-      loadGroups();
+      await storage.addGroupMember(gid, inviteUsername.trim());
+      await loadGroups();
       setInviteUsername('');
       setShowInvite(false);
       addToast('Member invited');
@@ -71,11 +83,18 @@ export default function Dashboard() {
     ? groups.find(g => g.id === activeView)
     : null;
 
-  const isOwner = activeGroup && activeGroup.ownerId === user.id;
+  const isOwner = activeGroup && activeGroup.owner_id === user.id;
 
-  const availableUsers = storage.getUsers().filter(u =>
-    u.id !== user.id && (!activeGroup || !activeGroup.members.includes(u.id))
-  );
+  const [availableUsers, setAvailableUsers] = useState([]);
+
+  useEffect(() => {
+    storage.getUsers().then(allUsers => {
+      const filtered = allUsers.filter(u =>
+        u.id !== user.id && !groupMembers.includes(u.id)
+      );
+      setAvailableUsers(filtered);
+    }).catch(() => setAvailableUsers([]));
+  }, [user.id, groupMembers]);
 
   function getActiveTitle() {
     if (activeView === 'personal') return 'Personal Vault';
@@ -201,7 +220,7 @@ export default function Dashboard() {
             {inviteError && <div className="auth-error">{inviteError}</div>}
             {availableUsers.length === 0 && (
               <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-                No other registered users found. All existing users are already members.
+                No other registered users found.
               </p>
             )}
             {availableUsers.length > 0 && (
@@ -214,9 +233,7 @@ export default function Dashboard() {
                     <button
                       key={u.id}
                       type="button"
-                      onClick={() => {
-                        setInviteUsername(u.username);
-                      }}
+                      onClick={() => { setInviteUsername(u.username); }}
                       style={{
                         padding: '0.25rem 0.6rem',
                         fontSize: '0.8rem',

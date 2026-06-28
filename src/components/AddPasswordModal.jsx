@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import * as storage from '../services/storage';
 import { getPasswordStrength, getStrengthLabel, getStrengthColor, generatePassword } from '../services/passwordUtils';
 import { useToast } from '../contexts/ToastContext';
 
 export default function AddPasswordModal({ onClose, groupId, onSaved }) {
+  const { user } = useAuth();
   const [domain, setDomain] = useState('');
   const [entryUsername, setEntryUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -30,9 +32,8 @@ export default function AddPasswordModal({ onClose, groupId, onSaved }) {
 
     setSaving(true);
     try {
-      const cur = storage.getCurrentUser();
       await storage.addPassword({
-        userId: cur.id,
+        userId: user.id,
         groupId: groupId || null,
         domain: domain.trim(),
         username: entryUsername.trim(),
