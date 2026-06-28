@@ -73,6 +73,10 @@ export default function Dashboard() {
 
   const isOwner = activeGroup && activeGroup.ownerId === user.id;
 
+  const availableUsers = storage.getUsers().filter(u =>
+    u.id !== user.id && (!activeGroup || !activeGroup.members.includes(u.id))
+  );
+
   function getActiveTitle() {
     if (activeView === 'personal') return 'Personal Vault';
     return activeGroup ? activeGroup.name : 'Vault';
@@ -195,9 +199,44 @@ export default function Dashboard() {
               <button className="modal__close" onClick={() => setShowInvite(false)}>&times;</button>
             </div>
             {inviteError && <div className="auth-error">{inviteError}</div>}
+            {availableUsers.length === 0 && (
+              <p style={{ color: '#6b7280', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                No other registered users found. All existing users are already members.
+              </p>
+            )}
+            {availableUsers.length > 0 && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151', display: 'block', marginBottom: '0.3rem' }}>
+                  Registered Users
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                  {availableUsers.map(u => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => {
+                        setInviteUsername(u.username);
+                      }}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        fontSize: '0.8rem',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        background: inviteUsername === u.username ? '#6366f1' : '#fff',
+                        color: inviteUsername === u.username ? '#fff' : '#374151',
+                        cursor: 'pointer',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {u.username}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <form onSubmit={handleInvite} className="modal__form">
               <div className="form-group">
-                <label htmlFor="invite-username">Username</label>
+                <label htmlFor="invite-username">Or type username</label>
                 <input
                   id="invite-username"
                   type="text"
